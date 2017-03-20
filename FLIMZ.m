@@ -1,19 +1,19 @@
-function varargout = FLIMZ(varargin)
-%% FLIMIM.m USAGE NOTES
+function FLIMZ(varargin)
+%% FLIMZ.m USAGE NOTES
 %{
 
 Syntax
 -----------------------------------------------------
-    FLIMCCD()
-    FLIMCCD(datfilefdir)
+    FLIMZ()
+    FLIMZ(datfilefdir)
 
 
 Description
 -----------------------------------------------------
-    FLIMCCD() can be run with no arguments passed in. In this case user
+    FLIMZ() can be run with no arguments passed in. In this case user
     will be prompted to select a directory which contains the FLIM dat 
     file along with the corresponding CCD images. Optionally this function can 
-    be called using FLIMCCD(datfilefdir) where the full path to the data directory
+    be called using FLIMZ(datfilefdir) where the full path to the data directory
     is explicitly provided.
     
 
@@ -21,7 +21,7 @@ Useage Definitions
 -----------------------------------------------------
 
 
-    FLIMCCD()
+    FLIMZ()
         launches a GUI that will first ask whether you want to compile
         a dataset output from Bh SPC-Image. Specifically it requires
         that...
@@ -73,7 +73,7 @@ Attribution
 clc; close all; clear all;
 disp('clearing matlab workspace');
 
-thisfile = 'FLIMIM.m';
+thisfile = 'FLIMZ.m';
 thisfilepath = fileparts(which(thisfile));
 cd(thisfilepath);
 
@@ -111,8 +111,8 @@ ROI.PHd  = {};
 ROI.TYPE  = {};
 
 
-global haxROIS haxTABH
-global LifeImageFile FLIMcmap
+global haxROIS haxTABH haxAPI hREC hLINE
+global LifeImageFile FLIMcmap gROI
 global intenseThreshMIN intenseThreshMAX intenseThreshPMIN intenseThreshPMAX
 global lifeThreshMIN lifeThreshMAX chiThreshMIN chiThreshMAX magnification maglevel
 global flimdata flimdat flimtable flimd ROInames Datafilename 
@@ -126,7 +126,8 @@ global imgG imgR imgF haxes haxnum stampSize
 global phFLIM phCCDR phCCDG
 global sROI sROIpos sROIarea sROImask flimdats
 global tempV1 tempV2 tempV3 tempV4 tempV5 tempV6 tempV7 tempV8
-global ROIcsv CLIMslider
+global ROIcsv CLIMslider APIgroup ROIgroup TRACEgroup
+global radioh doLineTrace pairedRadio singleRadio delROImodeOFF delROImodeON
 
 tempV1 = [];
 tempV2 = [];
@@ -186,7 +187,6 @@ dVOL = 1;
 imgG = [];
 imgR = [];
 imgF = [];
-haxes = {};
 haxnum = 1:3;
 stampSize = 11;
 hROIs = {};
@@ -227,37 +227,138 @@ MAINGUIFIG = figure('Units', 'normalized','OuterPosition', [.02 .05 .85 .87], 'B
 
 
 haxCCDG = axes('Parent', MAINGUIFIG, 'NextPlot', 'Add',...
-    'Position', [0.05 0.15 0.8 0.8], 'OuterPosition', [-.2 0 1 1],...
+    'Position', [0.05 0.14 0.8 0.8], 'OuterPosition', [-.2 0 1 1],...
     'PlotBoxAspectRatio', [1 1 1],'XColor','none','YColor','none'); 
     % ,'XDir','reverse',...
 
 haxCCDR = axes('Parent', MAINGUIFIG, 'NextPlot', 'Add',...
-    'Position', [0.05 0.15 0.8 0.8], 'OuterPosition', [-.2 0 1 1],...
+    'Position', [0.05 0.14 0.8 0.8], 'OuterPosition', [-.2 0 1 1],...
     'PlotBoxAspectRatio', [1 1 1],'XColor','none','YColor','none'); 
     % ,'XDir','reverse',...
 
 haxFLIM = axes('Parent', MAINGUIFIG, 'NextPlot', 'Add',...
-    'Position', [0.05 0.15 0.8 0.8], 'OuterPosition', [-.2 0 1 1],...
+    'Position', [0.05 0.14 0.8 0.8], 'OuterPosition', [-.2 0 1 1],...
     'PlotBoxAspectRatio', [1 1 1],'XColor','none','YColor','none');
+
+haxAPI = axes('Parent', MAINGUIFIG, 'NextPlot', 'Add','Color','none',...
+    'Position', [0.05 0.14 0.8 0.8], 'OuterPosition', [-.2 0 1 1],...
+    'PlotBoxAspectRatio', [1 1 1],'XColor','none','YColor','none');
+
+axes(haxAPI)
+TRACEgroup = hggroup;
+APIgroup = hggroup;
 
 haxROIS = axes('Parent', MAINGUIFIG, 'NextPlot', 'Add','Color','none',...
     'Position', [0.05 0.15 0.8 0.8], 'OuterPosition', [-.2 0 1 1],...
     'PlotBoxAspectRatio', [1 1 1],'XColor','none','YColor','none');
 
-linkaxes([haxFLIM,haxCCDG,haxCCDR,haxROIS],'xy')
-haxes = {haxFLIM, haxCCDG, haxCCDR, haxROIS};
+axes(haxROIS)
+ROIgroup = hggroup;
 
-
-changeimgh = uicontrol('Parent', MAINGUIFIG, 'Units', 'normalized', ...
-    'Position', [0.10 0.03 0.1 0.04], 'String', 'Next Image', 'FontSize', 11,...
-    'Callback', @changeimg);
+linkaxes([haxFLIM,haxCCDG,haxCCDR,haxAPI,haxROIS],'xy')
+haxes = {haxFLIM, haxCCDG, haxCCDR, haxAPI, haxROIS};
 
 
 CLIMsliderTxt = uicontrol('Parent', MAINGUIFIG, 'Style', 'Text', 'Units', 'normalized', ...
-    'Position', [.01 .97 .09 .02], 'FontSize', 10, 'String', 'IMG Intensity','BackgroundColor',[1 1 1]);
+    'Position', [.01 .97 .06 .02], 'FontSize', 10, 'String', 'FLIM Level','BackgroundColor',[1 1 1]);
 CLIMslider = uicontrol('Parent', MAINGUIFIG, 'Units', 'normalized','Style','slider',...
 	'Max',150,'Min',1,'Value',50,'SliderStep',[0.01 0.10],...
-	'Position', [.10 .97 .30 .02], 'Callback', @setclim);
+	'Position', [.07 .97 .23 .02], 'Callback', @setCLimFLIM);
+
+CLIMsliderCCDGTxt = uicontrol('Parent', MAINGUIFIG, 'Style', 'Text', 'Units', 'normalized', ...
+    'Position', [.01 .95 .06 .02], 'FontSize', 10, 'String', 'GFP Level','BackgroundColor',[1 1 1]);
+CLIMsliderCCDG = uicontrol('Parent', MAINGUIFIG, 'Units', 'normalized','Style','slider',...
+	'Max',150,'Min',1,'Value',50,'SliderStep',[0.01 0.10],...
+	'Position', [.07 .95 .23 .02], 'Callback', @setCLimGFP);
+
+CLIMsliderCCDRTxt = uicontrol('Parent', MAINGUIFIG, 'Style', 'Text', 'Units', 'normalized', ...
+    'Position', [.01 .93 .06 .02], 'FontSize', 10, 'String', 'RFP Level','BackgroundColor',[1 1 1]);
+CLIMsliderCCDR = uicontrol('Parent', MAINGUIFIG, 'Units', 'normalized','Style','slider',...
+	'Max',150,'Min',1,'Value',50,'SliderStep',[0.01 0.10],...
+	'Position', [.07 .93 .23 .02], 'Callback', @setCLimRFP);
+
+
+CONsliderTxt = uicontrol('Parent', MAINGUIFIG, 'Style', 'Text', 'Units', 'normalized', ...
+    'Position', [.30 .97 .06 .02], 'FontSize', 10, 'String', 'F Contrast','BackgroundColor',[1 1 1]);
+CONslider = uicontrol('Parent', MAINGUIFIG, 'Units', 'normalized','Style','slider',...
+	'Max',100,'Min',50,'Value',80,'SliderStep',[0.01 0.10],...
+	'Position', [.36 .97 .21 .02], 'Callback', @setCLimFLIM);
+
+CONsliderCCDGTxt = uicontrol('Parent', MAINGUIFIG, 'Style', 'Text', 'Units', 'normalized', ...
+    'Position', [.30 .95 .06 .02], 'FontSize', 10, 'String', 'G Contrast','BackgroundColor',[1 1 1]);
+CONsliderCCDG = uicontrol('Parent', MAINGUIFIG, 'Units', 'normalized','Style','slider',...
+	'Max',100,'Min',50,'Value',80,'SliderStep',[0.01 0.10],...
+	'Position', [.36 .95 .21 .02], 'Callback', @setCLimGFP);
+
+CONsliderCCDRTxt = uicontrol('Parent', MAINGUIFIG, 'Style', 'Text', 'Units', 'normalized', ...
+    'Position', [.30 .93 .06 .02], 'FontSize', 10, 'String', 'R Contrast','BackgroundColor',[1 1 1]);
+CONsliderCCDR = uicontrol('Parent', MAINGUIFIG, 'Units', 'normalized','Style','slider',...
+	'Max',100,'Min',50,'Value',80,'SliderStep',[0.01 0.10],...
+	'Position', [.36 .93 .21 .02], 'Callback', @setCLimRFP);
+
+
+
+
+%----------------------------------------------------
+%           SWAP IMAGE PANNEL
+%----------------------------------------------------
+ShowIMGpanelH = uibuttongroup('Parent', MAINGUIFIG, 'Visible','on',...
+                  'Units', 'normalized','BackgroundColor',[1 1 1],'FontSize', 11,...
+                  'Position',[.001 .60 .06 .20],'Title','Show IMG',...
+                  'SelectionChangedFcn',@imTOG,'Tag','imgTOG');
+
+showFIMh = uicontrol('Parent', ShowIMGpanelH, 'Units', 'normalized','Style','togglebutton', ...
+    'Position', [.001 .67 .99 .32], 'String', 'FLIM', 'FontSize', 11);
+
+showGIMh = uicontrol('Parent', ShowIMGpanelH, 'Units', 'normalized','Style','togglebutton', ...
+    'Position', [.001 .34 .99 .32], 'String', 'GFP', 'FontSize', 11);
+
+showRIMh = uicontrol('Parent', ShowIMGpanelH, 'Units', 'normalized','Style','togglebutton', ...
+    'Position', [.001 .001 .99 .32], 'String', 'RFP', 'FontSize', 11);
+
+
+
+%----------------------------------------------------
+%           CREATE CUSTOM TOOLBAR
+%----------------------------------------------------
+
+MAINGUItoolbar = uitoolbar(MAINGUIFIG);
+
+
+UITB_chgIM = uipushtool(MAINGUItoolbar,'TooltipString','Reset Workspace',...
+               'ClickedCallback',@resetwsFun,'Tag','restwsFUN');
+
+
+UITB_delROI = uitoggletool(MAINGUItoolbar,'TooltipString','Delete ROI Mode',...
+               'ClickedCallback',@delROImode,'Tag','delModeTB');
+
+
+% SET TOOLBAR ICONS
+% fullfile(matlabroot,'toolbox','matlab','icons')
+[img,map] = imread(fullfile(matlabroot,'toolbox','matlab','icons','greenarrowicon.gif'));             
+UITB_chgIM.CData = ind2rgb(img,map);
+
+[img,map] = imread(fullfile(matlabroot,'toolbox','matlab','icons','tool_data_brush.png'));
+UITB_delROI.CData = im2double(img);
+
+%---------------------
+delROITOGh = uibuttongroup('Parent', MAINGUIFIG, 'Visible','on',...
+                  'Units', 'normalized','BackgroundColor',[1 1 1],...
+                  'Position',[.30 .02 .15 .06],'Title','DELETE ROI MODE',...
+                  'SelectionChangedFcn',@delROImode,'Tag','delModeTOG');
+
+
+delROImodeOFF  = uicontrol('Parent', delROITOGh,'Style','togglebutton', 'Units', 'normalized', ...
+    'Position', [.01 .01 .45 .98], 'String', 'OFF', 'FontSize', 11);
+
+delROImodeON = uicontrol('Parent', delROITOGh,'Style','togglebutton', 'Units', 'normalized', ...
+    'Position', [.51 .01 .45 .98], 'String', 'ON', 'FontSize', 11);
+
+
+
+
+
+
 
 
 
@@ -285,7 +386,7 @@ ROI_IDh = uicontrol('Parent', IPpanelH, 'Style', 'Text', 'Units', 'normalized', 
 
 
 stampSizeTxt = uicontrol('Parent', IPpanelH, 'Style', 'Text', 'Units', 'normalized', ...
-    'Position', [.78 .87 .20 .11], 'FontSize', 10, 'String', 'Stamp Size','BackgroundColor',[1 1 1]);
+    'Position', [.78 .87 .20 .11], 'FontSize', 10, 'String', 'ROI Size','BackgroundColor',[1 1 1]);
 
 
 stampvals = {'9','10','11','12','14','16','18','20'};
@@ -298,36 +399,31 @@ stampSizeH.ListboxTop = 3;
 
 
 %---------------------
-boxtypeh = uibuttongroup('Parent', IPpanelH, 'Visible','off',...
+radioh = uibuttongroup('Parent', IPpanelH, 'Visible','off',...
                   'Units', 'normalized','BackgroundColor',[1 1 1],...
-                  'Position',[.02 .50 .95 .24],...
-                  'SelectionChangedFcn',@boxselection);
-              
-% Create three radio buttons in the button group.
-boxtypeh1 = uicontrol(boxtypeh,'Style','radiobutton','FontSize', 11,...
-                  'String','freehand','BackgroundColor',[1 1 1],...
+                  'Position',[.01 .50 .95 .24],...
+                  'SelectionChangedFcn',@ROImode);
+
+% Create two radio buttons in the button group.
+pairedRadio = uicontrol(radioh,'Style','radiobutton','FontSize', 11,...
+                  'String','Paired ROI Mode','BackgroundColor',[1 1 1],...
                   'Units', 'normalized',...
-                  'Position',[0.05 0.05 0.3 0.9],...
-                  'HandleVisibility','off');
-              
-boxtypeh2 = uicontrol(boxtypeh,'Style','radiobutton','FontSize', 11,...
-                  'String','rectangle','BackgroundColor',[1 1 1],...
-                  'Units', 'normalized',...
-                  'Position',[0.3 0.05 0.3 0.9],...
+                  'Position',[0.05 0.05 0.32 0.9],...
                   'HandleVisibility','off');
 
-boxtypeh3 = uicontrol(boxtypeh,'Style','radiobutton','FontSize', 11,...
-                  'String','elipse','BackgroundColor',[1 1 1],...
+singleRadio = uicontrol(radioh,'Style','radiobutton','FontSize', 11,...
+                  'String','Single ROI Mode','BackgroundColor',[1 1 1],...
                   'Units', 'normalized',...
-                  'Position',[0.55 0.05 0.3 0.9],...
+                  'Position',[0.40 0.05 0.32 0.9],...
                   'HandleVisibility','off');
 
-boxtypeh4 = uicontrol(boxtypeh,'Style','radiobutton','FontSize', 11,...
-                  'String','stamp','BackgroundColor',[1 1 1],...
+doLineTrace = uicontrol(radioh,'Style','checkbox','FontSize', 11,...
+                  'String','Line Trace','BackgroundColor',[1 1 1],...
                   'Units', 'normalized',...
-                  'Position',[0.77 0.05 0.3 0.9],...
+                  'Position',[0.75 0.05 0.23 0.9],...
                   'HandleVisibility','off');              
-boxtypeh.Visible = 'on';
+radioh.Visible = 'on';
+doLineTrace.Value = 1;
 %------------------
 
 
@@ -586,7 +682,7 @@ function loadIMG(loadIMGh, eventData)
     
     ROI_IDh.String = int2str(0);
     
-    boxtypeh.SelectedObject = boxtypeh4; % Set radiobutton to stamp
+    radioh.SelectedObject = pairedRadio; % Set radiobutton to stamp
     
     set(MAINGUIFIG, 'Name', datfilef);
     
@@ -738,116 +834,124 @@ end
 
 
 
-
-
-
 %----------------------------------------------------
 %           GET ROI
 %----------------------------------------------------
 function getROI(boxidselecth, eventdata)
 
-    axes(haxROIS)
     ROI_IDh.String = int2str(str2num(ROI_IDh.String) + 1);
+    Rmode = radioh.SelectedObject.String;
+    doTrace = doLineTrace.Value;
+        
     
+    if strcmp(Rmode,'Paired ROI Mode')
     %---------------------------
     % GET SPINE ROI
     %---------------------------
-    if strcmp(boxtypeh.SelectedObject.String,'rectangle')
-        
-        hROI = imrect(haxROIS);
-        ROIpos = hROI.getPosition;
-        ROIarea = ROIpos(3) * ROIpos(4);
-        setColor(hROI,[0 0 1]);
-        
-    elseif strcmp(boxtypeh.SelectedObject.String,'elipse')
-        
-        hROI = imellipse(haxROIS);
-        ROIpos = hROI.getPosition;
-        ROIarea = pi * (.5*ROIpos(3)) * (.5*ROIpos(4));
-        setColor(hROI,[0 0 1]);
-        
-    elseif strcmp(boxtypeh.SelectedObject.String,'stamp')
-        
-        % [x,y] = FLIMginput(2,'custom');
+        memocon('Click center of ROI #1 (spine)')
+        %axes(haxROIS); pause(0.05);
+        axes(haxAPI); APIgroup.Visible='on'; pause(0.05);
+    
         hROI = impoint;
         ROIpos = hROI.getPosition;
         delete(hROI)
-        hROI = imellipse(haxROIS, [ROIpos-round(stampSize/2) stampSize stampSize]);
+        hROI = imellipse(haxAPI, [ROIpos-round(stampSize/2) stampSize stampSize]);
         ROIpos = hROI.getPosition;
         ROIarea = pi * (stampSize/2)^2;
         setColor(hROI,[0 0 1]);
+        % verts = getVertices(hROI);
+
+        haxAPI.Children(1).DisplayName = ['S' ROI_IDh.String];
+
+        %nROI = numel(ROI)+1;
+        %ROI(nROI).POS   = ROIpos;
+        %ROI(nROI).PH    = hROI;
+        %ROI(nROI).TYPE  = Rmode;
+
         
-    else % strcmp(boxtypeh.SelectedObject.String,'freehand')
-        hROI = imfreehand(haxROIS);
-        ROIpos = hROI.getPosition;
-        ROIarea = polyarea(ROIpos(:,1),ROIpos(:,2));
-        setColor(hROI,[0 0 1]);
-    end
-    
-    haxROIS.Children(1).DisplayName = ['S' ROI_IDh.String];
-    
-    nROI = numel(ROI)+1;
-    ROI(nROI).POS   = ROIpos;
-    ROI(nROI).PH    = hROI;
-    ROI(nROI).TYPE  = boxtypeh.SelectedObject.String;
-
-
-
+        
+        set(hROI,'Parent',APIgroup)
+        APIgroup.Visible = 'off';
+        axes(haxROIS); pause(0.05);
+        %axes(haxAPI); APIgroup.Visible='on'; pause(0.05);
+        
+        hREC = rectangle('Parent',haxROIS,'Position',ROIpos,'Curvature',1,'LineWidth',2,'EdgeColor',[.4 .4 1]);
+        set(hREC,'Parent',ROIgroup)
+        
     %---------------------------
     % GET DENDRITE ROI
     %---------------------------
-    Q_getd = questdlg('Select dendrite ROI?', 'Select dendrite ROI?', 'Yes', 'No', 'Yes');
-    if strcmp(Q_getd,'Yes')
-        axes(haxROIS)
+        memocon('Click center of ROI #2 (dendrite)')
+        axes(haxAPI); APIgroup.Visible='on'; pause(0.05);
         
-        if strcmp(boxtypeh.SelectedObject.String,'rectangle')
+        hROI = impoint;
+        ROIpos = hROI.getPosition;
+        delete(hROI)
+        hROI = imellipse(haxAPI, [ROIpos-round(stampSize/2) stampSize stampSize]);
+        ROIpos = hROI.getPosition;
+        ROIarea = pi * (stampSize/2)^2;
+        setColor(hROI,[1 1 0]);
 
-            hROI = imrect(haxROIS);
-            ROIpos = hROI.getPosition;
-            ROIarea = ROIpos(3) * ROIpos(4);
-            setColor(hROI,[1 1 0]);
-
-        elseif strcmp(boxtypeh.SelectedObject.String,'elipse')
-
-            hROI = imellipse(haxROIS);
-            ROIpos = hROI.getPosition;
-            ROIarea = pi * (.5*ROIpos(3)) * (.5*ROIpos(4));
-            setColor(hROI,[1 1 0]);
-
-        elseif strcmp(boxtypeh.SelectedObject.String,'stamp')
-
-            % [x,y] = FLIMginput(2,'custom');
-            hROI = impoint;
-            ROIpos = hROI.getPosition;
-            delete(hROI)
-            hROI = imellipse(haxROIS, [ROIpos-round(stampSize/2) stampSize stampSize]);
-            ROIpos = hROI.getPosition;
-            ROIarea = pi * (stampSize/2)^2;
-            setColor(hROI,[1 1 0]);
-
-        else % strcmp(boxtypeh.SelectedObject.String,'freehand')
-            hROI = imfreehand(haxROIS);
-            ROIpos = hROI.getPosition;
-            ROIarea = polyarea(ROIpos(:,1),ROIpos(:,2));
-            setColor(hROI,[1 1 0]);
-        end
+        haxAPI.Children(1).DisplayName = ['D' ROI_IDh.String];
         
-        haxROIS.Children(1).DisplayName = ['D' ROI_IDh.String];
+        set(hROI,'Parent',APIgroup)
+        APIgroup.Visible = 'off';
+        axes(haxROIS); pause(0.05);
+        %axes(haxAPI); APIgroup.Visible='on'; pause(0.05);
         
+        hREC = rectangle('Parent',haxROIS,'Position',ROIpos,'Curvature',1,'LineWidth',2,'EdgeColor',[1 1 0]);
+        set(hREC,'Parent',ROIgroup)
+
+    else
+    %---------------------------
+    % GET SPINE ROI
+    %--------------------------- 
+        memocon('Click center of ROI')
+        %axes(haxROIS); pause(0.05);
+        axes(haxAPI); APIgroup.Visible='on'; pause(0.05);
+    
+        hROI = impoint;
+        ROIpos = hROI.getPosition;
+        delete(hROI)
+        hROI = imellipse(haxAPI, [ROIpos-round(stampSize/2) stampSize stampSize]);
+        ROIpos = hROI.getPosition;
+        ROIarea = pi * (stampSize/2)^2;
+        setColor(hROI,[0 0 1]);
+        % verts = getVertices(hROI);
+
+        haxAPI.Children(1).DisplayName = ['S' ROI_IDh.String];
+
+        nROI = numel(ROI)+1;
+        ROI(nROI).POS   = ROIpos;
+        ROI(nROI).PH    = hROI;
+        ROI(nROI).TYPE  = Rmode;
+
+        
+        
+        set(hROI,'Parent',APIgroup)
+        APIgroup.Visible = 'off';
+        axes(haxROIS); pause(0.05);
+        %axes(haxAPI); APIgroup.Visible='on'; pause(0.05);
+        
+        hREC = rectangle('Parent',haxROIS,'Position',ROIpos,'Curvature',1,'LineWidth',2,'EdgeColor',[.4 .4 1]);
+        set(hREC,'Parent',ROIgroup)
+    
     end
+    
+    
     
     
     %---------------------------
     % GET LINE-TRACE ROI
     %---------------------------
-    Q_getline = questdlg('Draw ROI Line?', 'Draw ROI Line?', 'Yes', 'No', 'Yes');
-    if strcmp(Q_getline,'Yes')
-        axes(haxROIS)
+    if doTrace
+        memocon('Click drag a line - release to finish')
+        axes(haxAPI); TRACEgroup.Visible='on'; pause(0.05);
 
-        hROI = imline(haxROIS);
+        hROI = imline(haxAPI);
         dpos = hROI.getPosition;
         setColor(hROI,[0 1 0]);
-        haxROIS.Children(1).DisplayName = ['L' ROI_IDh.String];
+        haxAPI.Children(1).DisplayName = ['L' ROI_IDh.String];
         
         spineextent = sqrt((dpos(1,1)-dpos(2,1))^2 + (dpos(1,2)-dpos(2,2))^2);
         
@@ -855,15 +959,27 @@ function getROI(boxidselecth, eventdata)
         [SPIx,SPIy,SPIg] = improfile(imgG, dpos(:,1), dpos(:,2), round(spineextent));
         [SPIx,SPIy,SPIr] = improfile(imgR, dpos(:,1), dpos(:,2), round(spineextent));
         
-        % scatter(haxTABH, cx,cy, dotsz,'MarkerFaceColor', [1 0 0])
+        fmax = max(max(SPIf)); 
+        fmin = min(min(SPIf));
+        SPIft = lintrans(SPIf,fmin,fmax,0,1);
+
         axes(haxTABH); hold off;
-        plot(haxTABH, SPIf); hold on;
+        plot(haxTABH, SPIft); hold on;
         plot(haxTABH, SPIg); hold on;
         plot(haxTABH, SPIr)
         axes(haxROIS)
         
+        
+        set(hROI,'Parent',TRACEgroup)
+        TRACEgroup.Visible = 'off';
+        axes(haxROIS); pause(0.05);
+        
+        hLINE = line(dpos(:,1), dpos(:,2),'Parent',haxROIS,'Color',[0 1 0]);
+        set(hLINE,'Parent',ROIgroup)
+        
     end
 
+    axes(haxROIS);
 
 
     %---------------------------
@@ -880,7 +996,6 @@ function getROI(boxidselecth, eventdata)
     set(gcf,'Pointer','arrow')
 
 end
-
 
 
 
@@ -1023,12 +1138,14 @@ end
 %----------------------------------------------------
 %        SET CLIM SLIDER CALLBACK
 %----------------------------------------------------
-function setclim(hObject, eventdata)
+function setCLimFLIM(hObject, eventdata)
 % Hints: hObject.Value returns position of slider
 %        hObject.Min and hObject.Max determine range of slider
 % sunel = get(handles.CLIMslider,'value'); % Get current light elev.
 % sunaz = get(hObject,'value');   % Varies from -180 -> 0 deg
 
+
+slideCON = CONslider.Value;
 
 lowerinten = str2num(intThreshMin.String);
 upperinten = str2num(intThreshMax.String);
@@ -1045,7 +1162,37 @@ haxFLIM.CLim = [(lowerintenPCT / ((slideVal/50)*(slideVal/50))),...
 
 end
 
+function setCLimRFP(hObject, eventdata)
+    
+    slideCON = CONsliderCCDR.Value;
 
+    lowerintenPCT = prctile(imgR(:),slideCON);
+    upperintenPCT = prctile(imgR(:),99.999);
+
+    slideVal = ceil(CLIMsliderCCDR.Value);
+
+    haxCCDR.CLim = [(lowerintenPCT / ((slideVal/50)*(slideVal/50))),...
+                    (upperintenPCT / ((slideVal/50)*(slideVal/50)) )];
+
+    % memocon(['image' num2str(slideVal)])
+
+end
+
+function setCLimGFP(hObject, eventdata)
+    
+    slideCON = CONsliderCCDG.Value;
+
+    lowerintenPCT = prctile(imgG(:),slideCON);
+    upperintenPCT = prctile(imgG(:),99.999);
+
+    slideVal = ceil(CLIMsliderCCDG.Value);
+
+    haxCCDG.CLim = [(lowerintenPCT / ((slideVal/50)*(slideVal/50))),...
+                    (upperintenPCT / ((slideVal/50)*(slideVal/50)) )];
+
+    % memocon(['image' num2str(slideVal)])
+
+end
 
 
 
@@ -1223,37 +1370,13 @@ end
 %----------------------------------------------------
 %           RADIO BUTTON BOX SELECTION
 %----------------------------------------------------
-function boxselection(source,callbackdata)
+function ROImode(source,callbackdata)
     
     % callbackdata.OldValue.String
-    % boxtypeh.SelectedObject.String
+    % radioh.SelectedObject.String
     % boxtype = callbackdata.NewValue.String;
     
-    memocon(['ROI Selector: ' callbackdata.NewValue.String])
-    
-    display(['Previous: ' callbackdata.OldValue.String]);
-    display(['Current: ' callbackdata.NewValue.String]);
-    display('------------------');
-
-end
-
-
-
-
-
-
-%----------------------------------------------------
-%           GET DENDRITE SIZE
-%----------------------------------------------------
-function getdendsize(boxidselecth, eventdata)
-
-
-   hline = imline;
-   dpos = hline.getPosition();
-    
-   dendritesize = sqrt((dpos(1,1)-dpos(2,1))^2 + (dpos(1,2)-dpos(2,2))^2);
-
-   disp(['dendrite size:' num2str(dendritesize)])
+    memocon(['ROI selection mode: ' callbackdata.NewValue.String])
 
 end
 
@@ -1270,9 +1393,10 @@ function compilefile(hObject, eventdata)
 %error if files are not of the right size, etc.) Compile then writes a new 
 %file that is the stacked version of all three files. 
 
-    set(initmenuh, 'Visible', 'Off');
 
     home = cd;
+    
+    memocon('Select a folder with files to compile.')
     compiledir = uigetdir;
     cd(compiledir);
 
@@ -1358,11 +1482,13 @@ function compilefile(hObject, eventdata)
                                                         save(savefilename, 'intensity', '-ascii', '-append');
                                                         save(savefilename, 'chi', '-ascii', '-append');
 
-                                                        disp(strcat(savefilename, ' was successfully compiled.'));
+                                                        memocon(['Successfully compiled: ' savefilename])
+                                                        
                                                     else
                                                         savefilename = mat2str(strcat(chifilename, '.dat'));
                                                         savefilename = savefilename(2:end-1);
-                                                        disp('Error compiling ', savefilename, '. One or more of the component files may be incorrect');
+                                                        memocon(['Error compiling ' savefilename])
+                                                        memocon('One or more component files may be incorrect.')
 
                                                     end
 
@@ -1378,18 +1504,83 @@ function compilefile(hObject, eventdata)
             end                 
         end
     end
-    msgbox('All files successfully compiled.');
-
-
-
+    memocon('ALL FILES SUCCESSFULLY COMPILED!')
     cd(home);
-
-    set(initmenuh, 'Visible', 'On');
-
 
 end
  
 
+
+
+
+
+
+%----------------------------------------------------
+%        CHANGE IMAGE
+%----------------------------------------------------
+function resetwsFun(hObject, eventdata)
+
+    resetFZ = questdlg('Reset FLIMZ Toolbox?', 'Reset FLIMZ Toolbox?', 'Yes', 'No', 'Yes');
+    switch resetFZ
+       case 'Yes'
+        memocon('Spinning-up a fresh FLIMZ workspace.');
+        clc; close all; clear;
+        FLIMZ
+       case 'No'
+        memocon(' ');
+        memocon(' ');
+        memocon('KEEP'); pause(.7)
+        memocon('      IT'); pause(.7)
+        memocon('          ROLLIN'' !!!'); pause(.7)
+        memocon('                            ');
+        memocon('                            ');
+        memocon('     _________              ');
+        memocon('      O     O               ');
+        memocon('----------------------------'); pause(.05)
+        memocon('                            ');
+        memocon('                            ');
+        memocon('        _________           ');
+        memocon('         O     O            ');
+        memocon('----------------------------'); pause(.05)
+        memocon('                            ');
+        memocon('                            ');
+        memocon('           _________        ');
+        memocon('            O     O         ');
+        memocon('----------------------------'); pause(.05)
+        memocon('                            ');
+        memocon('                            ');
+        memocon('               _________    ');
+        memocon('                O     O     ');
+        memocon('----------------------------'); pause(.05)
+        memocon('                            ');
+        memocon('                            ');
+        memocon('                   _________');
+        memocon('                    O     O ');
+        memocon('----------------------------'); pause(.05)
+        memocon('                            ');
+        memocon('                          / ');
+        memocon('                         /  ');
+        memocon('                        /O  ');
+        memocon('----------------------------'); pause(.05)
+        memocon('                            ');
+        memocon('                            ');
+        memocon('                          __');
+        memocon('                           O');
+        memocon('----------------------------'); pause(.05)
+        memocon('                            ');
+        memocon('                            ');
+        memocon('                            ');
+        memocon('                            ');
+        memocon('                            ');
+        memocon('                            ');
+        memocon('                            ');
+        memocon('                            ');
+        memocon('                            ');
+        memocon('Keep it rollin''. ');
+    end
+    
+
+end
 
 
 
@@ -1399,8 +1590,6 @@ end
 %----------------------------------------------------
 function changeimg(hObject, eventdata)
 
-    
-    
     haxnum = circshift(haxnum,[0 -1]);
     
     if haxnum(1) == 1
@@ -1433,191 +1622,221 @@ end
 
 
 
-
 %----------------------------------------------------
-%        LOAD FILE
+%        TOGGLE DISPLAYED IMAGE
 %----------------------------------------------------
-function loadfile(hObject, eventdata)
-%Load file triggers uiresume; the initial menu is set to invisible. Prompts
-%user for file to load, copies the datastack from the file; sets the image 
-%windows to visible, and plots the images.    
+function imTOG(hObject, eventdata)
 
-    set(initmenuh, 'Visible', 'Off');
-
-    
-    if numel(datfilef) < 1
-        [datfilef, datfilefdir] = uigetfile('*.dat', 'load a .dat file');
-    end
-    
-    if numel(ccdfileg) < 1
-        [ccdfileg, ccdfilegdir] = uigetfile({'*.tif*';'*.bmp';'*.jpg';'*.png'}, 'load green-channel .bmp file');
-    end
-
-    if numel(ccdfiler) < 1
-        [ccdfiler, ccdfilerdir] = uigetfile({'*.tif*';'*.bmp';'*.jpg';'*.png'}, 'load red-channel .dat file');
-    end
-    
-    
-    tempdata = load([datfilefdir datfilef]);
-    tempdatadim = size(tempdata);
-    totxdim = tempdatadim(1);
-    
-    
-    ydim = tempdatadim(2);
-    if mod(totxdim,3)~=0
-        disp('This does not appear to be a properly compiled file.');
-        return
-    end
-    xdim = totxdim/3;
-    datastack = zeros(xdim,ydim,3,'double');
-
-    
-    set(MAINGUIFIG, 'Visible', 'On');
-
-    datastack(1:xdim,1:ydim,1) = tempdata(1:xdim,1:ydim);
-    datastack(1:xdim,1:ydim,2) = tempdata(xdim+1:2*xdim,1:ydim);
-    datastack(1:xdim,1:ydim,3) = tempdata(2*xdim+1:3*xdim,1:ydim);
-
-    lifetime = datastack(:,:,1);
-    intensity = datastack(:,:,2);
-    chi = datastack(:,:,3);
-    
-    
-    imgG = ccdget([ccdfilegdir ccdfileg]);
-    imgR = ccdget([ccdfilerdir ccdfiler]);
-    
-    
-    
-    if size(lifetime,1) > size(imgG,1)
-    
-        lifetime = lifetime(1:size(imgG,1),:);
-        intensity = intensity(1:size(imgG,1),:);
-        chi = chi(1:size(imgG,1),:);
         
-    elseif size(lifetime,1) < size(imgG,1)
-        
-        imgG = imgG(1:size(lifetime,1),:);
-        imgR = imgR(1:size(lifetime,1),:);
-        
-    end
-        
-    if size(lifetime,2) > size(imgG,2)
-    
-        lifetime = lifetime(:,1:size(imgG,2));
-        intensity = intensity(:,1:size(imgG,2));
-        chi = chi(:,1:size(imgG,2));
-        
-    elseif size(lifetime,2) < size(imgG,2)
-        
-        imgG = imgG(:,1:size(lifetime,2));
-        imgR = imgR(:,1:size(lifetime,2));
-        
-    end
-        
-        
-        
-    
-    
-%{
-FLIMsets{1} = 'SPCI2/';
-basedir = '/Users/bradleymonk/Documents/MATLAB/myToolbox/LAB/FRET_FLIM/FRETdata/ActinProfilin/2016_02_21/';
+    if showFIMh.Value == 1;
 
-%---------------
-pixdir = FLIMsets{1};
-filedir = [basedir pixdir];
-regexpStr = '((\S)+(\.tif|\.jpg|\.bmp|\.png+))';
-allfileinfo = dir(filedir);
-allfilenames = {allfileinfo.name};
-filepaths    = fullfile(filedir,allfilenames(~cellfun('isempty',regexp(allfilenames,regexpStr))));
-fprintf('%s \r',filepaths{:})
-%---------------
-
-
-% IMGfiles = {IMGfilenames.name};
-for nn = 1:numel(filepaths)
-    
-    IMGs{nn} = imgcon(filepaths{nn});
-
-end
-
-IMG = IMGs{1};
-    
-%}
-    
-    
-
-    %----------------------------------------------------
-    %           SET USER-EDITABLE GUI VALUES
-    %----------------------------------------------------
-    set(intThreshMin, 'String', num2str(intenseThreshMIN));
-    set(intThreshMax, 'String', num2str(intenseThreshMAX));
-
-    set(intThreshMin, 'String', num2str(intenseThreshMIN));
-    set(intThreshMax, 'String', num2str(intenseThreshMAX));
-
-    set(lftthresholdMINh, 'String', num2str(lifeThreshMIN));
-    set(lftthresholdMAXh, 'String', num2str(lifeThreshMAX));
-
-    set(chiminh, 'String', num2str(chiThreshMIN));
-    set(chimaxh, 'String', num2str(chiThreshMAX));
-
-    set(magh, 'String', num2str(magnification));
-
-    set(MAINGUIFIG, 'Name', datfilef);
-    set(ROI_IDh, 'String', int2str(1));
-    set(haxCCDG, 'XLim', [1 size(imgG,2)], 'YLim', [1 size(imgG,1)]);
-    % set(haxCCDG, 'YLim', [1 ydim]);
-    set(haxCCDR, 'XLim', [1 size(imgR,2)], 'YLim', [1 size(imgR,1)]);
-    % set(haxCCDR, 'YLim', [1 ydim]);
-    set(haxFLIM, 'XLim', [1 xdim]);
-    set(haxFLIM, 'YLim', [1 ydim]);
-    
-    
-    set(stampSizeH, 'String', num2str(stampSize));
-    boxtypeh.SelectedObject = boxtypeh4; % Set radiobutton to stamp
-    % boxtype = boxtypeh.SelectedObject.String;
-    %----------------------------------------------------
-    
-    
-    
-    
-    %----------------------------------------------------
-    %                   DRAW IMAGE
-    %----------------------------------------------------
-    
-    axes(haxCCDG)
-    colormap(haxCCDG,hot)
-    phCCDG = imagesc(imgG , 'Parent', haxCCDG);
-              pause(1)
-              
-    axes(haxCCDR)
-    colormap(haxCCDR,hot)
-    phCCDR = imagesc(imgR, 'Parent', haxCCDR);
-        pause(1)
-        
-    axes(haxFLIM)    
-    colormap(haxFLIM,hot)
-    phFLIM = imagesc(intensity, 'Parent', haxFLIM,...
-                  [prctile(intensity(:),intenseThreshMIN) prctile(intensity(:),intenseThreshMAX)]);
-        pause(1)
         axes(haxFLIM)
-    
-    pause(.2)
-    imXlim = haxFLIM.XLim;
-    imYlim = haxFLIM.YLim;
-    
+        axes(haxROIS)
+        memocon('FLIM channel IMG')
+        pause(0.05);
 
+    elseif showGIMh.Value == 1;
 
+        axes(haxCCDG)
+        axes(haxROIS)
+        memocon('GREEN channel IMG')
+
+    elseif showRIMh.Value == 1;
+
+        axes(haxCCDR)
+        axes(haxROIS)
+        memocon('RED channel IMG')
+
+    end
+    
 end
 
 
 
 
 
+
+
+
+
+
 %----------------------------------------------------
-%        LOAD FILE
+%        DELETE ROI MODE
+%----------------------------------------------------
+function delROImode(hObject, eventdata)
+
+
+    if strcmp(hObject.Tag,'delModeTOG')
+        
+        if delROImodeON.Value == 1;
+            
+            UITB_delROI.State = 'on';
+
+            memocon('ROI DELETION MODE ~~ON~~')
+            disableButtons
+            axes(haxAPI); 
+            APIgroup.Visible='on';
+            TRACEgroup.Visible='on';
+            pause(0.05);
+
+        else
+            
+            UITB_delROI.State = 'off';
+            
+            redrawROIs()
+
+            memocon('ROI DELETION MODE ~~OFF~~')
+            enableButtons
+            APIgroup.Visible = 'off';
+            TRACEgroup.Visible='off';
+            axes(haxROIS); 
+            pause(0.05);
+
+        end
+    
+        
+    else
+    
+        if strcmp(hObject.State,'on')
+            
+            delROImodeON.Value = 1;
+            delROImodeOFF.Value = 0;
+
+            memocon('ROI DELETION MODE ~~ON~~')
+            disableButtons
+            axes(haxAPI); 
+            APIgroup.Visible='on';
+            TRACEgroup.Visible='on';
+            pause(0.05);
+
+        else
+            
+            delROImodeON.Value = 0;
+            delROImodeOFF.Value = 1;
+            
+            redrawROIs()
+
+            memocon('ROI DELETION MODE ~~OFF~~')
+            enableButtons
+            APIgroup.Visible = 'off';
+            TRACEgroup.Visible='off';
+            axes(haxROIS); 
+            pause(0.05);
+
+        end
+    
+    end
+
+end
+
+
+
+%----------------------------------------------------
+%        REDRAW ROIS
+%----------------------------------------------------
+function redrawROIs(hObject, eventdata)
+
+    memocon('Redrawing ROIs...')
+    
+    delete(ROIgroup.Children)
+    
+    %-------------
+    % REDRAW ROI CIRCLES
+    %-------------
+    sROI = findobj(APIgroup,'Type','patch');
+    gROI = findobj(APIgroup,'Type','hggroup');
+    axes(haxROIS); pause(0.05);
+    
+    for nn = 2:length(gROI)
+    %for nn = 1:length(sROI)
+        %hROI = sROI(nn);
+        %ROIpos = hROI.Vertices;
+        
+        DispName = gROI(nn).DisplayName;
+        ROIpos = gROI(nn).Children(9).Vertices;
+        hROI = impoint(haxROIS, mean(ROIpos));
+        ROIpos = hROI.getPosition;
+        delete(hROI);
+        hROI = imellipse(haxROIS, [ROIpos-round(stampSize/2) stampSize stampSize]);
+        ROIpos = hROI.getPosition;
+        delete(hROI);
+        
+        if strcmp(DispName(1),'S')
+        hREC = rectangle('Parent',haxROIS,'Position',ROIpos,'Curvature',1,'LineWidth',2,'EdgeColor',[.4 .4 1]);
+        else
+        hREC = rectangle('Parent',haxROIS,'Position',ROIpos,'Curvature',1,'LineWidth',2,'EdgeColor',[1 1 0]);
+        end
+        
+        set(hREC,'Parent',ROIgroup)
+        
+    end
+    
+    
+    %-------------
+    % REDRAW LINE TRACES
+    %-------------
+    gROI = findobj(TRACEgroup,'Type','hggroup');
+    
+    for nn = 2:length(gROI)
+        
+        ROIposE2 = [gROI(nn).Children(1).XData  gROI(nn).Children(1).YData];
+        ROIposE1 = [gROI(nn).Children(2).XData  gROI(nn).Children(2).YData];
+        hROI = imline(haxROIS,[ROIposE1; ROIposE2]);
+        dpos = hROI.getPosition;
+        delete(hROI);
+        
+        hLINE = line(dpos(:,1), dpos(:,2),'Parent',haxROIS,'Color',[0 1 0]);
+        set(hLINE,'Parent',ROIgroup)
+        
+    end
+    
+	APIgroup.Visible = 'off';
+	TRACEgroup.Visible='off';
+    
+    recountROI
+        
+    memocon('Done redrawing ROIs!')
+
+end
+
+
+
+%----------------------------------------------------
+%        RECOUNT ROIS
+%----------------------------------------------------
+function recountROIs(hObject, eventdata)
+    
+    if pairedRadio.Value == 1
+        ROI_IDh.String = int2str(size(APIgroup.Children,1) ./ 2);
+    else
+        ROI_IDh.String = int2str(size(APIgroup.Children,1));
+    end
+    
+    memocon(sprintf('ROI Count: % s ', ROI_IDh.String));
+    
+end
+
+function recountROI()
+    
+    if pairedRadio.Value == 1
+        ROI_IDh.String = int2str(size(APIgroup.Children,1) ./ 2);
+    else
+        ROI_IDh.String = int2str(size(APIgroup.Children,1));
+    end
+    
+    memocon(sprintf('ROI Count: % s ', ROI_IDh.String));
+    
+end
+
+
+
+
+%----------------------------------------------------
+%        SAVE ROI ANALYSIS DATA
 %----------------------------------------------------
 function saveDataset(hObject, eventdata)
+    
+    memocon('Preparing ROI analysis data for export...')
     
     %------
     lftthresholdMIN = str2double(lftthresholdMINh.String);
@@ -1634,10 +1853,17 @@ function saveDataset(hObject, eventdata)
     
     
     
+    recountROI
+    Rmode = radioh.SelectedObject.String;
+    doTrace = doLineTrace.Value;
+    axes(haxAPI); 
+    APIgroup.Visible='on'; 
+    pause(0.05);
     
     
     %------
-    sROI = findobj(haxROIS,'Type','patch');
+    sROI = findobj(APIgroup,'Type','patch');
+    gROI = findobj(APIgroup.Children,'Type','hggroup');
     
     % haxROIS.Children(1).Children(1).Color
     % haxROIS.Children(1).DisplayName
@@ -1710,26 +1936,32 @@ function saveDataset(hObject, eventdata)
     flimtable.Properties.RowNames = ROInames;
     
     writetable(flimtable,[Datafilename '_ROIANALYSIS.csv'],'WriteRowNames',true)
-    memocon('ROI ANALYSIS data saved successfully!')
+    memocon('ROI analysis data saved successfully!')
     
     
     
     
-    
+    %------------------------------------------------------
     memocon(' ')
-    memocon('Now saving line profiles...')
+    memocon('Preparing LINE profile data for export...')
     
-    lineROIS = findobj(haxROIS,'-regexp','DisplayName','L\w+');
     
-    linedat = zeros(length(lineROIS)*3,100);
-    linedatnames = cell(length(lineROIS)*3,1);
+    sROI = findobj(TRACEgroup,'Type','Line','-regexp','Tag','end \w+');
+    gROI = findobj(TRACEgroup.Children,'Type','hggroup');
+    %lineROIS = findobj(haxROIS,'-regexp','DisplayName','L\w+');
+    
+    linedat = zeros(length(gROI)*3,100);
+    linedatnames = cell(length(gROI)*3,1);
     mm=1;
-    for nn = 1:length(lineROIS)
+    if length(gROI) < 1
+        memocon('No LINE profile data found.')
+    else
+    for nn = 1:length(gROI)
         
-        L_ROInameID = lineROIS(nn).DisplayName;
+        L_ROInameID = gROI(nn).DisplayName;
         
-        Lpos = [lineROIS(nn).Children(2).XData  lineROIS(nn).Children(2).YData;...
-                lineROIS(nn).Children(1).XData  lineROIS(nn).Children(1).YData];
+        Lpos = [gROI(nn).Children(2).XData  gROI(nn).Children(2).YData;...
+                gROI(nn).Children(1).XData  gROI(nn).Children(1).YData];
             
         L_spineextent = sqrt((Lpos(1,1)-Lpos(2,1))^2 + (Lpos(1,2)-Lpos(2,2))^2);
         
@@ -1749,7 +1981,9 @@ function saveDataset(hObject, eventdata)
     
     writetable(linetable,[Datafilename '_LINEPROFILES.csv'],'WriteRowNames',true)
     memocon('Line profiles saved successfully!')
-
+    end
+    
+    memocon('DATA EXPORT FINISHED!')
 
 end
 
@@ -1759,198 +1993,24 @@ end
 
 
 %----------------------------------------------------
-%        PREP FOR SAVE
-%----------------------------------------------------
-function prepForSave(savefileh, eventData)
-    
-    % ------
-    
-    lftthresholdMIN = str2double(lftthresholdMINh.String);
-    lftthresholdMAX = str2double(lftthresholdMAXh.String);
-        
-    intPminmax = prctile(intensity(:),...
-        [str2double(intThreshMin.String) str2double(intThreshMax.String)]);
-    
-    chimin = str2double(chiminh.String);
-    chimax = str2double(chimaxh.String);
-    
-    ChiGood       = (chi >= chimin & chi <= chimax);
-    IntensityGood = (intensity >= intPminmax(1) & intensity <= intPminmax(2));
-    LifeGood      = (lifetime >= lftthresholdMIN & lifetime <= lftthresholdMAX);
-    AllGood       = (ChiGood .* IntensityGood .* LifeGood) > 0;
-
-    
-    
-    
-    
-    % ------
-    sROI = findobj(haxFLIM,'Type','patch');
-    
-    for nn = 1:length(sROI)
-        
-        sROIpos = sROI(nn).Vertices;
-        sROIarea = polyarea(sROIpos(:,1),sROIpos(:,2));
-        sROImask = poly2mask(sROIpos(:,1),sROIpos(:,2), ...
-                             size(intensity,1), size(intensity,2));
-
-
-        ROI_LIFETIME  = lifetime .* AllGood .* sROImask;
-        ROI_INTENSITY = intensity .* AllGood .* sROImask;
-        ROI_CHI       = chi .* AllGood .* sROImask;
-
-        ROI_imgG      = imgG .* AllGood .* sROImask;
-        ROI_imgR      = imgR .* AllGood .* sROImask;
-
-
-
-        ROI_LIFETIME_MEAN  = mean(ROI_LIFETIME(ROI_LIFETIME > 0));
-        ROI_INTENSITY_MEAN = mean(ROI_INTENSITY(ROI_INTENSITY > 0));
-        ROI_CHI_MEAN       = mean(ROI_CHI(ROI_CHI > 0));
-        ROI_imgG_MEAN      = mean(ROI_imgG(ROI_imgG > 0))*1000;
-        ROI_imgR_MEAN      = mean(ROI_imgR(ROI_imgR > 0))*1000;
-
-
-
-        flimdats{nn} = {ROI_LIFETIME_MEAN, ...
-                        ROI_INTENSITY_MEAN, ...
-                        ROI_CHI_MEAN, ...
-                        sROIarea, ...
-                        ROI_imgG_MEAN, ...
-                        ROI_imgR_MEAN};
-    
-    
-    end
-    % ------
-        
-end
-
-
-
-
-
-
-
-%----------------------------------------------------
-%        SAVE DATA
-%----------------------------------------------------
-function saveFile(savefileh, eventData)
-    
-    
-    prepForSave(savefileh, eventData)
-    
-
-    cd(datfilefdir);
-
-    saveDatafilename = inputdlg('Enter a filename to save data','file name',1,...
-                                {datfilef(1:end-4)});
-
-    Datafilename = char(strcat(saveDatafilename));
-
-    maglevel = str2double(magh.String);
-    
-    if numel(dpos) < 1; % If dendrite size was manually selected, numel(dpos) > 1
-        dendritesize = maglevel*5;
-    end
-    
-    
-    
-    for nn = 1:size(flimdats,2)
-        
-        VxD = flimdats{1,nn}{4} ./ (.5 .* dendritesize).^2;
-        
-        flimdat(nn,:) = [flimdats{1,nn}{1:6} maglevel dendritesize VxD];        
-        ROInames{nn} = num2str(nn);        
-    end
-    
-    
-    
-    flimtab = array2table(flimdat);
-    flimtab.Properties.VariableNames = {'LIFETIME' 'INTENSITY' 'CHISQR' 'VOLUME' ...
-                                        'GFP' 'RFP' 'MAG' 'DSIZE' 'VxD'};
-    flimtab.Properties.RowNames = ROInames;
-    
-    
-    
-    writetable(flimtab,[Datafilename '.csv'],'WriteRowNames',true)
-    disp('Data saved successfully!')
-    % msgbox('Data saved successfully');
-
-    cd(home);
-
-
-end
-
-
-
-
-
-%----------------------------------------------------
-%        SAVE ROI DATA
+%        EXPORT ROI LOCATIONS
 %----------------------------------------------------
 function saveROIfun(hObject, eventdata)
+    
+    memocon('Preparing to export ROI location data.')
+    memocon('Enter a name for the ROI export file.')
+    memocon(' ''_ROIs.mat'' will be appended to this filename.')
+    
+    cd(datfilefdir);
 
+    ROIfna = inputdlg('Name of ROI export file.','file name',1,{datfilef(1:end-4)});
+    ROIfname = char(strcat(ROIfna));
     
-%{
-    memocon('Select .csv or .mat file with ROI data')
+    save([ROIfname '_ROIs.mat'],'APIgroup', 'TRACEgroup', 'ROIgroup')
     
-    
-    [ROIFileName,ROIPathName,ROIFilterIndex] = uigetfile({'*.csv','*.mat'});
-    ROIfullpath = [ROIPathName ROIFileName];
-    
-    
-    if strcmp(ROIFileName(end-2:end),'csv')
-        
-        ROIcsv = csvread(ROIfullpath);
-        
-        ROIcsv(1,:) = [];
-        ROIcsv(:,1) = [];
-        ROIcsv(:,1:2:31) = [];
-        ROIcsv(ROIcsv(:,1) == 0 & ROIcsv(:,2) == 0,:) = [];
-        
-        SVx = [ROIcsv(:,1), ROIcsv(:,3), ROIcsv(:,5), ROIcsv(:,7), ROIcsv(:,1), NaN(size(ROIcsv,1),1)];
-        SVy = [ROIcsv(:,2) ROIcsv(:,4) ROIcsv(:,6) ROIcsv(:,8) ROIcsv(:,2) NaN(size(ROIcsv,1),1)];
-        DVx = [ROIcsv(:,9) ROIcsv(:,11) ROIcsv(:,13) ROIcsv(:,15) ROIcsv(:,9) NaN(size(ROIcsv,1),1)];
-        DVy = [ROIcsv(:,10) ROIcsv(:,12) ROIcsv(:,14) ROIcsv(:,16) ROIcsv(:,10) NaN(size(ROIcsv,1),1)];
-        SVx = SVx';
-        SVy = SVy';
-        DVx = DVx';
-        DVy = DVy';
-        
-        for nn = 1:size(ROIcsv,1)
-            Sh{nn} = line('XData',SVx(:),'YData',SVy(:), 'Color', 'r', 'Parent', gca);
-            Sh{nn}.DisplayName = num2str(nn); Sh{nn}.Tag = num2str(nn);
-            Dh{nn} = line('XData',DVx(:),'YData',DVy(:), 'Color', 'y', 'Parent', gca);
-            Dh{nn}.DisplayName = num2str(nn); Dh{nn}.Tag = num2str(nn);
-        end
-        
-        % processLoadedROI(SVx, SVy, DVx, DVy)
-        
-        
-    elseif strcmp(ROIFileName(end-2:end),'mat')
-        ROIloaded = load([ROIPathName ROIFileName],'MORPHdata','ROISAVES');
+    memocon([ROIfname '_ROIs.mat  was created.'])
+    memocon('ROI LOCATION DATA EXPORTED SUCCESSFULLY!')
 
-        MORPHdata = ROIloaded.MORPHdata;
-        ROISAVES = ROIloaded.ROISAVES;
-
-        memocon('ROI data loaded into workspace!')
-
-        lwd = 4;
-        axes(haxCCD)
-        for nn = 1:length(ROISAVES)
-            line(ROISAVES(nn).SpinePos(:,1), ROISAVES(nn).SpinePos(:,2),'Color',[.95 .95 .10],'LineWidth',lwd)
-            line(ROISAVES(nn).SpineExtentPos(:,1), ROISAVES(nn).SpineExtentPos(:,2),'Color',[.10 .95 .95],'LineWidth',lwd)
-            line(ROISAVES(nn).SpineHeadPos(:,1), ROISAVES(nn).SpineHeadPos(:,2),'Color',[.95 .10 .95],'LineWidth',lwd)
-            line(ROISAVES(nn).SpineNeckPos(:,1), ROISAVES(nn).SpineNeckPos(:,2),'Color',[.95 .10 .10],'LineWidth',lwd)
-            line(ROISAVES(nn).DendritePos(:,1), ROISAVES(nn).DendritePos(:,2),'Color',[.10 .95 .10],'LineWidth',lwd)
-            line(ROISAVES(nn).SpineNearPos(:,1), ROISAVES(nn).SpineNearPos(:,2),'Color',[.10 .10 .95],'LineWidth',lwd)
-        end
-    else
-        memocon('ROI import file must be .csv or .mat')
-        return
-    end
-
-    
-%}
 end
 
 
@@ -1961,6 +2021,8 @@ end
 %----------------------------------------------------
 function loadROIfun(hObject, eventdata)
 
+    
+    recountROI
     axes(haxROIS)
     memocon('Select .csv or .mat file with ROI data')
     
@@ -1990,68 +2052,62 @@ function loadROIfun(hObject, eventdata)
         
         for nn = 1:size(SVx,2)
             
-            SPI_hROI = imellipse(haxROIS, [[mean(SVx(1:4,nn)),mean(SVy(1:4,nn))]-round(stampSize/2) stampSize stampSize]);
+            
+            %--- PROCESS SPINE ROI IMPORTS ---
+            ROI_IDh.String = int2str(str2num(ROI_IDh.String) + 1);
+            
+            axes(haxAPI); APIgroup.Visible='on'; pause(0.02);
+            
+            SPI_hROI = imellipse(haxAPI, [[mean(SVx(1:4,nn)),mean(SVy(1:4,nn))]-round(stampSize/2) stampSize stampSize]);
             SPIpos = SPI_hROI.getPosition;
-            setColor(SPI_hROI,[0 0 1]);
+            setColor(SPI_hROI,[.4 .4 1]);
+            
+            haxAPI.Children(1).DisplayName = ['S' ROI_IDh.String];
+            set(SPI_hROI,'Parent',APIgroup)
             
             
-            DEN_hROI = imellipse(haxROIS, [[mean(DVx(1:4,nn)),mean(DVy(1:4,nn))]-round(stampSize/2) stampSize stampSize]);
+            APIgroup.Visible = 'off';
+            axes(haxROIS); pause(0.02);
+        
+            hREC = rectangle('Parent',haxROIS,'Position',SPIpos,'Curvature',1,'LineWidth',2,'EdgeColor',[.4 .4 1]);
+            set(hREC,'Parent',ROIgroup)
+            
+            
+            
+            %--- PROCESS DENDRITE ROI IMPORTS ---
+            axes(haxAPI); APIgroup.Visible='on'; pause(0.05);
+            
+            DEN_hROI = imellipse(haxAPI, [[mean(DVx(1:4,nn)),mean(DVy(1:4,nn))]-round(stampSize/2) stampSize stampSize]);
             DENpos = DEN_hROI.getPosition;
             setColor(DEN_hROI,[1 1 0]);
             
+            haxAPI.Children(1).DisplayName = ['D' ROI_IDh.String];
+            set(DEN_hROI,'Parent',APIgroup)
             
-            %haxROIS.Children(1).Children(1).Color
-            haxROIS.Children(1).DisplayName = ['D' num2str(nn)];
-            haxROIS.Children(2).DisplayName = ['S' num2str(nn)];
-
             
-            nROI = numel(ROI)+1;
-            ROI(nROI).POS     = SPIpos;
-            ROI(nROI).POSd    = DENpos;
-            ROI(nROI).PH      = SPI_hROI;
-            ROI(nROI).PHd     = DEN_hROI;
-            ROI(nROI).TYPE    = 'CSVIMPORT';
+            APIgroup.Visible = 'off';
+            axes(haxROIS); pause(0.02);
+        
+            hREC = rectangle('Parent',haxROIS,'Position',DENpos,'Curvature',1,'LineWidth',2,'EdgeColor',[1 1 0]);
+            set(hREC,'Parent',ROIgroup)
+                        
+            
+            % nROI = numel(ROI)+1;
+            % ROI(nROI).POS     = SPIpos;
+            % ROI(nROI).POSd    = DENpos;
+            % ROI(nROI).PH      = SPI_hROI;
+            % ROI(nROI).PHd     = DEN_hROI;
+            % ROI(nROI).TYPE    = 'CSVIMPORT';
 
-            pause(.05)
+            pause(.02)
         
         end
 
-        ROI_IDh.String = int2str(str2num(ROI_IDh.String) + size(SVx,2));
-        memocon('Finished importing ROIs.')
-        
-        % keyboard
-        % for nn = 1:size(SVx,2)
-        %     disp(haxROIS.Children(nn).DisplayName)
-        % end
-
-%         for nn = 1:size(ROIcsv,1)
-%             Sh{nn} = line('XData',SVx(:),'YData',SVy(:), 'Color', 'r', 'Parent', gca);
-%             Sh{nn}.DisplayName = num2str(nn); Sh{nn}.Tag = num2str(nn);
-%             Dh{nn} = line('XData',DVx(:),'YData',DVy(:), 'Color', 'y', 'Parent', gca);
-%             Dh{nn}.DisplayName = num2str(nn); Dh{nn}.Tag = num2str(nn);
-%         end
-        
-        % processLoadedROI(SVx, SVy, DVx, DVy)
-        
+        memocon('Finished importing ROIs.')     
         
     elseif strcmp(ROIFileName(end-2:end),'mat')
-        ROIloaded = load([ROIPathName ROIFileName],'MORPHdata','ROISAVES');
-
-        MORPHdata = ROIloaded.MORPHdata;
-        ROISAVES = ROIloaded.ROISAVES;
-
-        memocon('ROI data loaded into workspace!')
-
-        lwd = 4;
-        axes(haxROIS)
-        for nn = 1:length(ROISAVES)
-            line(ROISAVES(nn).SpinePos(:,1), ROISAVES(nn).SpinePos(:,2),'Color',[.95 .95 .10],'LineWidth',lwd)
-            line(ROISAVES(nn).SpineExtentPos(:,1), ROISAVES(nn).SpineExtentPos(:,2),'Color',[.10 .95 .95],'LineWidth',lwd)
-            line(ROISAVES(nn).SpineHeadPos(:,1), ROISAVES(nn).SpineHeadPos(:,2),'Color',[.95 .10 .95],'LineWidth',lwd)
-            line(ROISAVES(nn).SpineNeckPos(:,1), ROISAVES(nn).SpineNeckPos(:,2),'Color',[.95 .10 .10],'LineWidth',lwd)
-            line(ROISAVES(nn).DendritePos(:,1), ROISAVES(nn).DendritePos(:,2),'Color',[.10 .95 .10],'LineWidth',lwd)
-            line(ROISAVES(nn).SpineNearPos(:,1), ROISAVES(nn).SpineNearPos(:,2),'Color',[.10 .10 .95],'LineWidth',lwd)
-        end
+        memocon('The code to import mat files is not finished.')
+        memocon('Brad will finish this in the next update.')
     else
         memocon('ROI import file must be .csv or .mat')
         return
@@ -2066,16 +2122,7 @@ end
 
 
 
-%----------------------------------------------------
-%        CSUS DROPDOWN MENU CALLBACK
-%----------------------------------------------------
-function recountROIs(hObject, eventdata)
-    
-    ROI_IDh.String = int2str(size(haxROIS.Children,1));
-    
-    memocon(sprintf('ROI Count: % s ', ROI_IDh.String));
-    
-end
+
 
 
 
@@ -2096,13 +2143,21 @@ function [IMG] = imformat(imgpath)
 % imgFileNames = {imgFiles(:).name}';
 % imgpath = [filedir, '/', imgFileNames{1}];
 
-iminfo = imfinfo(imgpath);
-[im, map] = imread(imgpath);
+if ischar(imgpath) || iscellstr(imgpath)
+
+    iminfo = imfinfo(imgpath);
+    [im, map] = imread(imgpath);
+    im_ctype = iminfo.ColorType;
+
+else
+    im = imgpath;
+    im_ctype = 'truecolor';
+end
 
 
 im_size = size(im);
 im_nmap = numel(map);
-im_ctype = iminfo.ColorType;
+
 
 
 if strcmp(im_ctype, 'truecolor') || numel(im_size) > 2
@@ -2127,6 +2182,19 @@ end
 
 
 end
+
+
+
+
+%----------------------------------------------------
+%        LINTRANS LINE TRACE PROFILE
+%----------------------------------------------------
+function [y] = lintrans(x,a,b,c,d)
+
+    %lintrans = @(x,a,b,c,d) (c*(1-(x-a)/(b-a)) + d*((x-a)/(b-a)));    
+    y = (c.*(1-(x-a)./(b-a)) + d.*((x-a)./(b-a)));
+    
+end    
 
 
 
